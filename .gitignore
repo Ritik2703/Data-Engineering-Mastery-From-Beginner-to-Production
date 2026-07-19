@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
+target/
+logs/
+*.log
+.DS_Store
+dbt_packages/
+*.parquet
+*.csv
+credentials.json
+*.pem
