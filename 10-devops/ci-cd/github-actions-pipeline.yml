@@ -1,0 +1,57 @@
+# .github/workflows/data-pipeline-ci.yml
+# CI/CD for a data engineering repo: lint -> test -> build image -> deploy dbt/airflow
+
+name: data-pipeline-ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Lint (flake8)
+        run: flake8 . --max-line-length=100
+
+      - name: Run unit tests
+        run: pytest tests/ -v
+
+      - name: dbt test (data quality tests on staging)
+        run: |
+          dbt deps
+          dbt build --target ci
+
+  build-and-push-image:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t my-registry/etl-pipeline:${{ github.sha }} -f 10-devops/docker/Dockerfile .
+
+      - name: Push to registry
+        run: |
+          echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login -u "${{ secrets.REGISTRY_USER }}" --password-stdin
+          docker push my-registry/etl-pipeline:${{ github.sha }}
+
+  deploy:
+    needs: build-and-push-image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy new DAG/image to Airflow (example - sync to S3 DAGs folder for MWAA)
+        run: aws s3 sync ./dags s3://my-airflow-bucket/dags/ --delete
